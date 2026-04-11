@@ -1,10 +1,2 @@
-extension/node_modules
-build
-__pycache__
-./.vscode
-dist
-
-
-# Added by cargo
-
 /target
+.DS_Store
