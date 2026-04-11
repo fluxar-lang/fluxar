@@ -5,7 +5,7 @@ mod tests {
 
     #[test]
     fn execute_tests() {
-        let cases = read_dir("/Users/alex/Documents/GitHub/Fluxar/src/tests/cases").unwrap();
+        let cases = read_dir("/Users/alex/Documents/GitHub/Fluxar/tests/cases").unwrap();
         let mut errors = vec![];
         let mut msgs = vec![];
         for case in cases {

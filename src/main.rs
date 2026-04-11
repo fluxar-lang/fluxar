@@ -1,13 +1,7 @@
-mod environment;
-mod expr;
-mod interpreter;
-mod parser;
-mod resolver;
-mod scanner;
-mod statements;
-mod type_;
+mod ast;
+mod codegen;
+mod core;
 
-use crate::interpreter::*;
 use crate::parser::*;
 use crate::resolver::*;
 use crate::scanner::*;
@@ -26,10 +20,12 @@ pub fn run_file(path: &str) -> Result<(), String> {
 		Ok(contents) => return run_string(&contents),
 	}
 }
+
 pub fn run_string(contents: &str) -> Result<(), String> {
 	let mut interpreter = Interpreter::new();
 	run(&mut interpreter, contents)
 }
+
 fn run(interpreter: &mut Interpreter, contents: &str) -> Result<(), String> {
 	let mut scanner = Scanner::new(contents);
 	let tokens = scanner.scan_tokens()?;
@@ -43,6 +39,7 @@ fn run(interpreter: &mut Interpreter, contents: &str) -> Result<(), String> {
 	interpreter.interpret(stmts.iter().collect())?;
 	return Ok(());
 }
+
 fn run_prompt() -> Result<(), String> {
 	let mut interpreter = Interpreter::new();
 	loop {
