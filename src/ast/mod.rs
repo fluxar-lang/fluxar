@@ -1,4 +1,5 @@
-mod expr;
-mod scanner;
-mod parser;
-mod statements;
+pub mod expr;
+pub mod parser;
+pub mod scanner;
+pub mod statements;
+pub mod tokens;

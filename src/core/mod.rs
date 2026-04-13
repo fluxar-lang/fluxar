@@ -1,4 +1,3 @@
-mod environment;
-mod resolver;
-mod function;
-mod type_;
+pub mod environment;
+pub mod resolver;
+pub mod type_;

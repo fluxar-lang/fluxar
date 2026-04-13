@@ -1,46 +1,64 @@
-use core::str;
-use std::{collections::HashMap, string::String};
-fn get_keywords_hashmap() -> HashMap<&'static str, TokenType> {
+use std::collections::HashMap;
+
+use crate::ast::tokens::{LiteralValue, Token, TokenType, TokenType::*};
+
+fn get_keywords() -> HashMap<&'static str, TokenType> {
 	HashMap::from([
-		("and", And),
-		("class", Class),
-		("else", Else),
-		("false", False),
-		("for", For),
-		("fun", Fun),
-		("if", If),
-		("nil", Nil),
-		("or", Or),
-		("print", Print),
+		("fn", Fn),
+		("let", Let),
 		("return", Return),
-		("super", Super),
-		("this", This),
-		("true", True),
-		("var", Var),
+		("struct", Struct),
+		("enum", Enum),
+		("extend", Extend),
+		("interface", Interface),
+		("match", Match),
+		("if", If),
+		("else", Else),
 		("while", While),
+		("for", For),
+		("in", In),
+		("loop", Loop),
+		("break", Break),
+		("continue", Continue),
+		("defer", Defer),
+		("region", Region),
+		("use", Use),
+		("public", Public),
+		("async", Async),
+		("true", True),
+		("false", False),
+		("or", Or),
+		("as", As),
+		("self", SelfKw),
+		("mut", Mut),
+		("move", Move),
 	])
 }
+
 pub struct Scanner {
-	source: String,
+	source: Vec<char>,
 	pub tokens: Vec<Token>,
 	start: usize,
 	current: usize,
 	line: usize,
 	keywords: HashMap<&'static str, TokenType>,
 }
+
 impl Scanner {
 	pub fn new(source: &str) -> Self {
 		Self {
-			source: source.to_string(),
+			source: source.chars().collect(),
 			tokens: vec![],
-			line: 1,
 			start: 0,
 			current: 0,
-			keywords: get_keywords_hashmap(),
+			line: 1,
+			keywords: get_keywords(),
 		}
 	}
-	pub fn scan_tokens(self: &mut Self) -> Result<Vec<Token>, String> {
+
+	pub fn scan_tokens(&mut self) -> Result<Vec<Token>, String> {
 		let mut errors = vec![];
+
 		while !self.is_at_end() {
 			self.start = self.current;
 			match self.scan_token() {
@@ -48,309 +66,587 @@ impl Scanner {
 				Err(msg) => errors.push(msg),
 			}
 		}
+
 		self.tokens.push(Token {
 			token_type: Eof,
 			lexeme: "".to_string(),
 			literal: None,
 			line_number: self.line,
 		});
-		if errors.len() > 0 {
-			let mut joined = "".to_string();
-			// let _ = errors.iter().map(|msg| {
-			//     joined.push_str(&msg);
-			//     joined.push_str("\n");
-			// });
+
+		if !errors.is_empty() {
+			let mut joined = String::new();
+
 			for error in errors {
 				joined.push_str(&error);
-				joined.push_str("\n");
+				joined.push('\n');
 			}
+			
 			return Err(joined);
 		}
+
 		Ok(self.tokens.clone())
 	}
-	fn is_digit(self: &Self, ch: char) -> bool {
-		let uch: u8 = ch as u8;
-		uch >= '0' as u8 && uch <= '9' as u8
-	}
-	fn is_alpha(self: &Self, ch: char) -> bool {
-		let uch: u8 = ch as u8;
-		(uch >= 'a' as u8 && uch <= 'z' as u8)
-			|| (uch >= 'A' as u8 && uch <= 'Z' as u8)
-			|| (ch == '_')
-	}
-	fn is_alpha_numeric(self: &Self, ch: char) -> bool {
-		self.is_alpha(ch) || self.is_digit(ch)
-	}
-	fn is_at_end(self: &Self) -> bool {
-		self.current >= self.source.len()
-	}
-	fn scan_token(self: &mut Self) -> Result<(), String> {
+
+	fn scan_token(&mut self) -> Result<(), String> {
 		let c = self.advance();
 		match c {
 			'(' => self.add_token(LeftParen),
 			')' => self.add_token(RightParen),
 			'{' => self.add_token(LeftBrace),
 			'}' => self.add_token(RightBrace),
+			'[' => self.add_token(LeftBracket),
+			']' => self.add_token(RightBracket),
 			',' => self.add_token(Comma),
-			'.' => self.add_token(Dot),
-			'-' => self.add_token(Minus),
-			'+' => self.add_token(Plus),
-			':' => self.add_token(Colon),
-			';' => self.add_token(Semicolon),
-			'*' => self.add_token(Star),
-			'!' => {
-				let token = if self.char_match('=') {
-					BangEqual
-				} else {
-					Bang
-				};
-				self.add_token(token);
+			'?' => self.add_token(Question),
+			'_' => {
+				if self.peek().is_alphanumeric() || self.peek() == '_' {
+					self.identifier()
+				}
+				else {
+					self.add_token(Underscore)
+				}
 			}
-			'=' => {
-				let token = if self.char_match('=') {
-					EqualEqual
-				} else {
-					Equal
-				};
-				self.add_token(token);
-			}
-			'<' => {
-				let token = if self.char_match('=') {
-					LessEqual
-				} else if self.char_match('-') {
-					Gets
-				} else {
-					Less
-				};
-				self.add_token(token);
-			}
-			'>' => {
-				let token = if self.char_match('=') {
-					GreaterEqual
-				} else if self.char_match('-') {
-					Arrow
-				} else {
-					Greater
-				};
-				self.add_token(token);
-			}
-			'/' => {
-				if self.char_match('/') {
-					loop {
-						if self.peek() == '\n' || self.is_at_end() {
-							break;
-						}
+			';' => {
+				if matches!(self.tokens.last(), Some(t) if t.token_type == Semicolon) {
+					while self.peek() == ';' {
 						self.advance();
 					}
-				} else {
-					self.add_token(Slash);
+
+					let run_start = if self.start > 0 && self.source[self.start - 1] == ';' {
+						self.start - 1
+					}
+					else {
+						self.start
+					};
+
+					let unexpected: String = self.source[run_start..self.current].iter().collect();
+					return Err(format!("Line {}: unexpected \"{}\"", self.line, unexpected));
 				}
+				self.add_token(Semicolon);
+			}
+
+			'+' => {
+				if self.char_match('=') { self.add_token(PlusEqual); }
+				else { self.add_token(Plus); }
+			}
+			'*' => {
+				if self.char_match('=') { self.add_token(StarEqual); }
+				else { self.add_token(Star); }
+			}
+			'%' => self.add_token(Percent),
+			
+			'-' => {
+				if self.char_match('-') {
+					// -- line comment
+					while self.peek() != '\n' && !self.is_at_end() {
+						self.advance();
+					}
+				}
+				else if self.char_match('>') {
+					self.add_token(Arrow);
+				}
+				else if self.char_match('=') {
+					self.add_token(MinusEqual);
+				}
+				else {
+					self.add_token(Minus);
+				}
+			}
+			'/' => {
+				if self.char_match('=') { self.add_token(SlashEqual); }
+				else { self.add_token(Slash); }
+			}
+
+			'.' => {
+				if self.char_match('.') { self.add_token(DotDot); }
+				else { self.add_token(Dot); }
+			}
+			':' => {
+				if self.char_match(':') { self.add_token(ColonColon); }
+				else { self.add_token(Colon); }
+			}
+
+			'!' => {
+				if self.char_match('=') { self.add_token(BangEqual); }
+				else { self.add_token(Bang); }
+			}
+			'=' => {
+				if self.char_match('=') { self.add_token(EqualEqual); }
+				else if self.char_match('>') { self.add_token(FatArrow); }
+				else { self.add_token(Equal); }
+			}
+			'<' => {
+				if self.char_match('=') { self.add_token(LessEqual); }
+				else { self.add_token(Less); }
+			}
+			'>' => {
+				if self.char_match('=') { self.add_token(GreaterEqual); }
+				else { self.add_token(Greater); }
+			}
+
+			'&' => {
+				if self.char_match('&') { self.add_token(AmpAmp); }
+				else { self.add_token(Ampersand); }
 			}
 			'|' => {
-				if self.char_match('>') {
-					self.add_token(Pipe);
-				} else {
-					return Err(format!("Expected '>' at line {}", self.line));
+				if self.char_match('|') { self.add_token(PipePipe); }
+				else {
+					return Err(format!("Line {}: unexpected '|', did you mean '||'?", self.line));
 				}
 			}
+
 			' ' | '\r' | '\t' => {}
-			'\n' => self.line += 1,
+			'\n' => {
+				self.line += 1;
+			}
+
 			'"' => self.string()?,
+			'\'' => self.char_literal()?,
 
 			c => {
-				if self.is_digit(c) {
+				if c.is_ascii_digit() {
 					self.number()?;
-				} else if self.is_alpha(c) {
+				}
+				else if c.is_alphabetic() || c == '_' {
 					self.identifier();
-				} else {
-					return Err(format!(
-						"Unrecognized char at line {}: {}",
-						self.line, c
-					));
+				}
+				else {
+					return Err(format!("Line {}: unrecognized character '{}'", self.line, c));
 				}
 			}
 		}
 		Ok(())
 	}
-	fn add_token(self: &mut Self, token_type: TokenType) {
+
+	fn add_token(&mut self, token_type: TokenType) {
 		self.add_token_lit(token_type, None);
 	}
-	fn add_token_lit(
-		self: &mut Self,
-		token_type: TokenType,
-		literal: Option<LiteralValue>,
-	) {
-		let text = self.source[self.start..self.current].to_string();
+
+	fn add_token_lit(&mut self, token_type: TokenType, literal: Option<LiteralValue>) {
+		let text: String = self.source[self.start..self.current]
+			.iter()
+			.collect();
+
 		self.tokens.push(Token {
-			token_type: token_type,
+			token_type,
 			lexeme: text,
-			literal: literal,
+			literal,
 			line_number: self.line,
 		});
 	}
-	fn string(self: &mut Self) -> Result<(), String> {
+
+	fn string(&mut self) -> Result<(), String> {
 		while self.peek() != '"' && !self.is_at_end() {
 			if self.peek() == '\n' {
 				self.line += 1;
 			}
 			self.advance();
 		}
+
 		if self.is_at_end() {
-			return Err("Unterminated string!".to_string());
+			return Err(format!("Line {}: unterminated string", self.line));
 		}
 		self.advance();
-		let value = &self.source[self.start + 1..self.current - 1];
-		self.add_token_lit(StringLit, Some(StringValue(value.to_string())));
+
+		let value: String = self.source[self.start + 1..self.current - 1].iter().collect();
+		self.add_token_lit(StringLit, Some(LiteralValue::StringValue(value)));
 		Ok(())
 	}
-	fn number(self: &mut Self) -> Result<(), String> {
-		while self.is_digit(self.peek()) {
+
+	fn fstring(&mut self) -> Result<(), String> {
+		while self.peek() != '"' && !self.is_at_end() {
+			if self.peek() == '\n' {
+				self.line += 1;
+			}
 			self.advance();
 		}
-		if self.peek() == '.' && self.is_digit(self.peek_next()) {
+
+		if self.is_at_end() {
+			return Err(format!("Line {}: unterminated format string", self.line));
+		}
+		self.advance();
+
+		// content between f" and closing " (skip the f and both quotes)
+		let value: String = self.source[self.start + 2..self.current - 1].iter().collect();
+		self.add_token_lit(FStringLit, Some(LiteralValue::StringValue(value)));
+		Ok(())
+	}
+
+	fn char_literal(&mut self) -> Result<(), String> {
+		if self.is_at_end() {
+			return Err(format!("Line {}: unterminated char literal", self.line));
+		}
+
+		let ch = if self.peek() == '\\' {
 			self.advance();
-			while self.is_digit(self.peek()) {
+			match self.advance() {
+				'n' => '\n',
+				't' => '\t',
+				'r' => '\r',
+				'0' => '\0',
+				'\\' => '\\',
+				'\'' => '\'',
+				c => return Err(format!("Line {}: unknown escape '\\{}'", self.line, c)),
+			}
+		}
+		else {
+			self.advance()
+		};
+
+		if self.is_at_end() || self.peek() != '\'' {
+			if !self.is_at_end() && self.peek() != '\'' {
+				return Err(format!("Line {}: multi-char literal is not allowed", self.line));
+			}
+			return Err(format!("Line {}: unterminated char literal", self.line));
+		}
+		self.advance();
+
+		self.add_token_lit(CharLit, Some(LiteralValue::CharValue(ch)));
+		Ok(())
+	}
+
+	fn number(&mut self) -> Result<(), String> {
+		while self.peek().is_ascii_digit() {
+			self.advance();
+		}
+
+		let is_float = self.peek() == '.' && self.peek_next().is_ascii_digit();
+		if is_float {
+			self.advance();
+			while self.peek().is_ascii_digit() {
 				self.advance();
 			}
 		}
-		let substring = &self.source[self.start..self.current];
-		let value = substring.parse::<f64>();
-		match value {
-			Ok(value) => self.add_token_lit(Number, Some(FValue(value))),
-			Err(_) => {
-				return Err(format!("Could not parse number: {}", substring))
-			}
+
+		let text: String = self.source[self.start..self.current]
+			.iter()
+			.collect();
+
+		if is_float {
+			let value = text.parse::<f64>()
+				.map_err(|_| format!(
+					"Line {}: invalid float '{}'", 
+					self.line,
+					text
+				))?;
+			self.add_token_lit(FloatLit, Some(LiteralValue::FloatValue(value)));
 		}
+		else {
+			let value = text.parse::<i64>()
+				.map_err(|_| format!(
+					"Line {}: invalid integer '{}'", 
+					self.line, 
+					text
+				))?;
+			self.add_token_lit(IntLit, Some(LiteralValue::IntValue(value)));
+		}
+
 		Ok(())
 	}
-	fn identifier(self: &mut Self) {
-		while self.is_alpha_numeric(self.peek()) {
+
+	fn identifier(&mut self) {
+		while self.peek().is_alphanumeric() || self.peek() == '_' {
 			self.advance();
 		}
-		let substring = &self.source[self.start..self.current];
-		if let Some(&t_type) = self.keywords.get(substring) {
-			self.add_token(t_type);
-		} else {
+
+		let text: String = self.source[self.start..self.current]
+			.iter()
+			.collect();
+
+		if text == "f" && self.peek() == '"' {
+			self.advance();
+			// cannot return Result from here, so use unwrap-safe path
+			// (fstring handles its own errors via the caller)
+			let _ = self.fstring();
+			return;
+		}
+
+		if let Some(&token_type) = self.keywords.get(text.as_str()) {
+			self.add_token(token_type);
+		}
+		else {
 			self.add_token(Identifier);
 		}
 	}
-	fn peek(self: &Self) -> char {
-		if self.is_at_end() {
-			return '\0';
-		}
-		self.source.chars().nth(self.current).unwrap()
+
+	fn is_at_end(&self) -> bool {
+		self.current >= self.source.len()
 	}
-	fn peek_next(self: &Self) -> char {
-		if self.current + 1 >= self.source.len() {
-			return '\0';
-		}
-		self.source.chars().nth(self.current + 1).unwrap()
+
+	fn peek(&self) -> char {
+		if self.is_at_end() { '\0' } else { self.source[self.current] }
 	}
-	fn char_match(self: &mut Self, ch: char) -> bool {
-		if self.is_at_end() {
-			return false;
-		}
-		if self.source.chars().nth(self.current).unwrap() != ch {
-			return false;
-		} else {
-			self.current += 1;
-			return true;
-		}
+
+	fn peek_next(&self) -> char {
+		if self.current + 1 >= self.source.len() { '\0' } else { self.source[self.current + 1] }
 	}
-	fn advance(self: &mut Self) -> char {
-		let c = self.source.chars().nth(self.current).unwrap();
+
+	fn advance(&mut self) -> char {
+		let c = self.source[self.current];
 		self.current += 1;
 		c
 	}
-}
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum TokenType {
-	// Single-char tokens
-	LeftParen,
-	RightParen,
-	LeftBrace,
-	RightBrace,
-	Comma,
-	Dot,
-	Minus,
-	Plus,
-	Colon,
-	Semicolon,
-	Slash,
-	Star,
 
-	// One or two chars
-	Bang,
-	BangEqual,
-	Equal,
-	EqualEqual,
-	Greater,
-	GreaterEqual,
-	Less,
-	LessEqual,
-	Pipe,
-	Gets,
-	Arrow,
-
-	// Literals
-	Identifier,
-	StringLit,
-	Number,
-
-	// Keywords
-	And,
-	Class,
-	Else,
-	False,
-	Fun,
-	For,
-	If,
-	Nil,
-	Or,
-	Print,
-	Return,
-	Super,
-	This,
-	True,
-	Var,
-	While,
-
-	Eof,
-}
-use TokenType::*;
-impl std::fmt::Display for TokenType {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		write!(f, "{:?}", self)
+	fn char_match(&mut self, expected: char) -> bool {
+		if self.is_at_end() || self.source[self.current] != expected {
+			return false;
+		}
+		self.current += 1;
+		true
 	}
 }
-#[derive(Debug, Clone)]
-pub enum LiteralValue {
-	FValue(f64),
-	StringValue(String),
-}
-use LiteralValue::*;
-#[derive(Debug, Clone)]
-pub struct Token {
-	pub token_type: TokenType,
-	pub lexeme: String,
-	pub literal: Option<LiteralValue>,
-	pub line_number: usize,
-}
-impl Token {
-	pub fn to_string(self: &Self) -> String {
-		format!("{} {} {:?}", self.token_type, self.lexeme, self.literal)
-	}
-}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
-	#[test]
-	fn handle_one_char_tokens() {
-		let source = "(( ))";
-		let mut scanner = Scanner::new(source);
-		let _ = scanner.scan_tokens();
 
-		assert_eq!(scanner.tokens.len(), 5);
-		assert_eq!(scanner.tokens[0].token_type, LeftParen);
+	#[test]
+	fn test_basic_tokens() {
+		let mut scanner = Scanner::new("let x: int = 42;");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		assert_eq!(tokens[0].token_type, Let);
+		assert_eq!(tokens[1].token_type, Identifier);
+		assert_eq!(tokens[2].token_type, Colon);
+		assert_eq!(tokens[3].token_type, Identifier);
+		assert_eq!(tokens[4].token_type, Equal);
+		assert_eq!(tokens[5].token_type, IntLit);
+		assert_eq!(tokens[6].token_type, Semicolon);
+		assert_eq!(tokens[7].token_type, Eof);
+	}
+
+	#[test]
+	fn test_explicit_semicolon() {
+		let mut scanner = Scanner::new("let x = 10;\n let y = 20;");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+		let types: Vec<TokenType> = tokens.iter().map(|t| t.token_type).collect();
+
+		assert_eq!(types, vec![
+			Let, Identifier, Equal, IntLit, Semicolon,
+			Let, Identifier, Equal, IntLit, Semicolon,
+			Eof,
+		]);
+	}
+
+	#[test]
+	#[should_panic]
+	fn test_many_semicolons() {
+		let mut scanner = Scanner::new("let x = 10;;;\n let y = 20;");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+		let types: Vec<TokenType> = tokens.iter().map(|t| t.token_type).collect();
+
+		assert_eq!(types, vec![
+			Let, Identifier, Equal, IntLit, Semicolon,
+			Let, Identifier, Equal, IntLit, Semicolon,
+			Eof,
+		]);
+	}
+
+	#[test]
+	fn test_newlines_do_not_insert_semicolon() {
+		let mut scanner = Scanner::new("let x = 10\nlet y = 20");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+		let types: Vec<TokenType> = tokens.iter().map(|t| t.token_type).collect();
+
+		assert_eq!(types, vec![
+			Let, Identifier, Equal, IntLit,
+			Let, Identifier, Equal, IntLit,
+			Eof,
+		]);
+	}
+
+	#[test]
+	fn test_no_semicolon_after_brace_open() {
+		let mut scanner = Scanner::new("if x > 0 { print(x) }");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		let has_semi_after_brace = tokens.windows(2).any(|w| {
+			w[0].token_type == LeftBrace && w[1].token_type == Semicolon
+		});
+		assert!(!has_semi_after_brace);
+	}
+
+	#[test]
+	fn test_float_int() {
+		let mut scanner = Scanner::new("42 3.14");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		assert_eq!(tokens[0].token_type, IntLit);
+		assert_eq!(tokens[1].token_type, FloatLit);
+	}
+
+	#[test]
+	fn test_arrow_and_fat_arrow() {
+		let mut scanner = Scanner::new("-> =>");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		assert_eq!(tokens[0].token_type, Arrow);
+		assert_eq!(tokens[1].token_type, FatArrow);
+	}
+
+	#[test]
+	fn test_dot_dot() {
+		let mut scanner = Scanner::new("0..10");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		assert_eq!(tokens[0].token_type, IntLit);
+		assert_eq!(tokens[1].token_type, DotDot);
+		assert_eq!(tokens[2].token_type, IntLit);
+	}
+
+	#[test]
+	fn test_dash_dash_comment() {
+		let mut scanner = Scanner::new("let x = 5; -- this is a comment\nlet y = 10;");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+		let types: Vec<TokenType> = tokens.iter().map(|t| t.token_type).collect();
+
+		assert_eq!(types, vec![
+			Let, Identifier, Equal, IntLit, Semicolon,
+			Let, Identifier, Equal, IntLit, Semicolon,
+			Eof,
+		]);
+	}
+
+	#[test]
+	fn test_logical_operators() {
+		let mut scanner = Scanner::new("a && b || c;");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+		let types: Vec<TokenType> = tokens.iter().map(|t| t.token_type).collect();
+
+		assert_eq!(types, vec![
+			Identifier, AmpAmp, Identifier, PipePipe, Identifier, Semicolon, Eof,
+		]);
+	}
+
+	#[test]
+	fn test_compound_assignment() {
+		let mut scanner = Scanner::new("x += 1; y -= 2; z *= 3; w /= 4;");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+		let types: Vec<TokenType> = tokens.iter().map(|t| t.token_type).collect();
+
+		assert_eq!(types, vec![
+			Identifier, PlusEqual, IntLit, Semicolon,
+			Identifier, MinusEqual, IntLit, Semicolon,
+			Identifier, StarEqual, IntLit, Semicolon,
+			Identifier, SlashEqual, IntLit, Semicolon,
+			Eof,
+		]);
+
+		let mut scanner = Scanner::new("x += 1;\n y -= 2;\n z *= 3;\n w /= 4;\n");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+		let types: Vec<TokenType> = tokens.iter().map(|t| t.token_type).collect();
+
+		assert_eq!(types, vec![
+			Identifier, PlusEqual, IntLit, Semicolon,
+			Identifier, MinusEqual, IntLit, Semicolon,
+			Identifier, StarEqual, IntLit, Semicolon,
+			Identifier, SlashEqual, IntLit, Semicolon,
+			Eof,
+		]);
+	}
+
+	#[test]
+	fn test_compound_assignment_without_semicolons() {
+		let mut scanner = Scanner::new("x += 1 y -= 2 z *= 3 w /= 4");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+		let types: Vec<TokenType> = tokens.iter().map(|t| t.token_type).collect();
+
+		assert_eq!(types, vec![
+			Identifier, PlusEqual, IntLit,
+			Identifier, MinusEqual, IntLit,
+			Identifier, StarEqual, IntLit,
+			Identifier, SlashEqual, IntLit,
+			Eof,
+		]);
+	}
+
+	#[test]
+	fn test_question_mark() {
+		let mut scanner = Scanner::new("val?");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		assert_eq!(tokens[0].token_type, Identifier);
+		assert_eq!(tokens[1].token_type, Question);
+	}
+
+	#[test]
+	fn test_char_literal() {
+		let mut scanner = Scanner::new("'a' 'z'");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		assert_eq!(tokens[0].token_type, CharLit);
+		assert_eq!(tokens[1].token_type, CharLit);
+		
+		if let Some(LiteralValue::CharValue(c)) = &tokens[0].literal {
+			assert_eq!(*c, 'a');
+		}
+		else {
+			panic!("Expected CharValue");
+		}
+	}
+
+	#[test]
+	#[should_panic]
+	fn test_many_char_literal() {
+		let mut scanner = Scanner::new("'abc' 'z'");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		assert_eq!(tokens[0].token_type, CharLit);
+		assert_eq!(tokens[1].token_type, CharLit);
+
+		if let Some(LiteralValue::CharValue(c)) = &tokens[0].literal {
+			assert_eq!(*c, 'a');
+		}
+		else {
+			panic!("Expected CharValue");
+		}
+	}
+
+	#[test]
+	fn test_char_escape() {
+		let mut scanner = Scanner::new("'\\n' '\\t' '\\\\' '\\''");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		let chars: Vec<char> = tokens.iter().filter(|t| t.token_type == CharLit).map(|t| {
+			match &t.literal {
+				Some(LiteralValue::CharValue(c)) => *c,
+				_ => panic!("Expected CharValue"),
+			}
+		}).collect();
+
+		assert_eq!(chars, vec!['\n', '\t', '\\', '\'']);
+	}
+
+	#[test]
+	fn test_fstring() {
+		let mut scanner = Scanner::new("f\"hello {name}\"");
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+
+		assert_eq!(tokens[0].token_type, FStringLit);
+
+		if let Some(LiteralValue::StringValue(s)) = &tokens[0].literal {
+			assert_eq!(s, "hello {name}");
+		}
+		else {
+			panic!("Expected StringValue in FStringLit");
+		}
+	}
+
+	#[test]
+	fn test_struct_definition() {
+		let example = "struct Player {\n\t name: str;\n\t health: int;\n};";
+		let mut scanner = Scanner::new(example);
+
+		let tokens = scanner.scan_tokens().expect("Scan failed");
+		let types: Vec<TokenType> = tokens.iter().map(|t| t.token_type).collect();
+
+		assert_eq!(types, vec![
+			Struct, Identifier, LeftBrace,
+			Identifier, Colon, Identifier, Semicolon,
+			Identifier, Colon, Identifier, Semicolon,
+			RightBrace, Semicolon,
+			Eof,
+		]);
 	}
 }
